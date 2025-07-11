@@ -91,6 +91,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Place these helper functions at the top of the file (after imports) so they are always defined before use
+import re
+
+def extract_score_from_markdown(md):
+    # Match numbers like 8.7 in lines like '**Overall Score:** **8.7/10**' or '- **Overall Score:** **8.7/10**' or 'Overall Score: 8.7/10'
+    match = re.search(r'Overall Score[\s\S]*?(\d+(?:\.\d+)?)\s*/\s*10', md)
+    if match:
+        return float(match.group(1))
+    return 0.0
+
+def extract_recommendation_from_markdown(md):
+    match = re.search(r'Decision: ?([A-Z ]+)', md)
+    if match:
+        return match.group(1).strip()
+    return "Unknown"
+
 
 class StreamlitApp:
     """Main Streamlit application for resume analysis."""
@@ -283,7 +299,7 @@ class StreamlitApp:
         - **📈 Competitive Analysis**: Market positioning and salary alignment insights
         - **📄 Multi-format Support**: Analyze PDF resumes with advanced text extraction
         - **🔍 Detailed Reports**: Structured JSON reports with strengths, gaps, and recommendations
-        - **� Batch Processing**: Handle multiple resumes simultaneously
+        - ** Batch Processing**: Handle multiple resumes simultaneously
         - **🔒 Privacy-First**: No data storage, all processing is temporary
         
         #### New JSON Structure Benefits:
@@ -442,30 +458,35 @@ class StreamlitApp:
         
         st.success(f"✅ Analysis completed for {len(results)} candidates")
         
-        # Debug: Show raw results for troubleshooting
-        st.write("DEBUG: Raw results", results)
-        
         # Results summary
         st.subheader("📊 Results Summary")
         
         # Create results dataframe
         df_data = []
         for result in results:
-            # Extract data from new JSON structure
             executive_summary = result.get('executive_summary', {})
             candidate_profile = result.get('candidate_profile', {})
-            
-            score = executive_summary.get('overall_score', 0)
-            recommendation = executive_summary.get('overall_recommendation', 'Unknown')
+            score_raw = executive_summary.get('overall_score', result.get('score', 0))
+            if isinstance(score_raw, str):
+                match = re.match(r'([\d\.]+)', score_raw)
+                score = float(match.group(1)) if match else 0.0
+            else:
+                score = float(score_raw)
+            recommendation = executive_summary.get('overall_recommendation', result.get('recommendation', 'Unknown'))
+            if isinstance(recommendation, (list, dict)):
+                recommendation = str(recommendation)
+            # Fallback: extract from markdown if missing
+            if (not score or score == 0) and result.get('report_content'):
+                score = extract_score_from_markdown(result['report_content'])
+            if (not recommendation or recommendation == 'Unknown') and result.get('report_content'):
+                recommendation = extract_recommendation_from_markdown(result['report_content'])
             confidence = executive_summary.get('confidence_level', 'Unknown')
-            
-            # Use plain text for DataFrame, no HTML
             df_data.append({
                 'Candidate': result.get('candidate_name', 'Unknown'),
-                'Score': f"{result.get('score', 0):.1f}/10",
-                'Recommendation': result.get('recommendation', 'Unknown'),
+                'Score': f"{score:.1f}/10",
+                'Recommendation': recommendation,
                 'Confidence': confidence,
-                'Experience': 'Unknown',  # You can extract from report_content if needed
+                'Experience': 'Unknown',
                 'Status': '✅ Success' if result.get('valid', True) else '❌ Failed'
             })
         
@@ -476,8 +497,21 @@ class StreamlitApp:
         st.subheader("📋 Detailed Results")
         for i, result in enumerate(results, 1):
             candidate_name = result.get('candidate_name', 'Unknown')
-            score = result.get('score', 0)
-            recommendation = result.get('recommendation', 'Unknown')
+            executive_summary = result.get('executive_summary', {})
+            score_raw = executive_summary.get('overall_score', result.get('score', 0))
+            if isinstance(score_raw, str):
+                match = re.match(r'([\d\.]+)', score_raw)
+                score = float(match.group(1)) if match else 0.0
+            else:
+                score = float(score_raw)
+            recommendation = executive_summary.get('overall_recommendation', result.get('recommendation', 'Unknown'))
+            if isinstance(recommendation, (list, dict)):
+                recommendation = str(recommendation)
+            # Fallback: extract from markdown if missing
+            if (not score or score == 0) and result.get('report_content'):
+                score = extract_score_from_markdown(result['report_content'])
+            if (not recommendation or recommendation == 'Unknown') and result.get('report_content'):
+                recommendation = extract_recommendation_from_markdown(result['report_content'])
             strengths = result.get('strengths', [])
             gaps = result.get('gaps', [])
             report_content = result.get('report_content', '')
